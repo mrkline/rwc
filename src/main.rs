@@ -15,7 +15,7 @@ struct CountResults {
 }
 
 /// Read a file (via the given reader) line by line and count things.
-fn do_count<R: Read>(reader: BufReader<R>) -> CountResults {
+fn count_stream<R: Read>(reader: BufReader<R>) -> CountResults {
     let mut res = CountResults { bytes: 0, chars: 0, lines: 0,
                                  words: 0, max_line_length: 0 };
 
@@ -63,7 +63,7 @@ fn main() {
 
     // If we have no args, read from stdin.
     if matches.free.is_empty() {
-        let counts = do_count(BufReader::new(stdin()));
+        let counts = count_stream(BufReader::new(stdin()));
         print_results(&counts, &matches, "<stdin>");
     }
 
@@ -76,7 +76,7 @@ fn main() {
                 continue;
             }
         };
-        let counts = do_count(BufReader::new(file));
+        let counts = count_stream(BufReader::new(file));
         print_results(&counts, &matches, filename);
     }
 }
