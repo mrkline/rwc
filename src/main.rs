@@ -1,10 +1,10 @@
 extern crate getopts;
 
-use getopts::Options;
+use getopts::{Matches, Options};
 use std::env;
 use std::io::prelude::*;
 use std::fs::File;
-use std::io::{BufReader, stdin};
+use std::io::{BufReader, stdin, stderr};
 
 struct CountResults {
     bytes: u64,
@@ -14,12 +14,13 @@ struct CountResults {
     max_line_length: u64,
 }
 
+/// Read a file (via the given reader) line by line and count things.
 fn do_count<R: Read>(reader: BufReader<R>) -> CountResults {
     let mut res = CountResults { bytes: 0, chars: 0, lines: 0,
                                  words: 0, max_line_length: 0 };
 
     for line in reader.lines() {
-        let line = line.ok().expect("There was an IO error.");
+        let line = line.expect("There was an IO error reading a line.");
 
         res.lines += 1;
         res.bytes += line.len() as u64;
@@ -41,7 +42,6 @@ fn do_count<R: Read>(reader: BufReader<R>) -> CountResults {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let program = args[0].clone();
 
     let mut opts = Options::new();
 
@@ -53,58 +53,50 @@ fn main() {
                  "max-line-length",
                  "print the length of the longest line");
     opts.optflag("h", "help", "display this help and exit");
-    opts.optflag("v", "version", "output version information and exit");
 
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => {
-            m
-        }
-        Err(f) => {
-            panic!(f.to_string())
-        }
-    };
+    let matches = opts.parse(&args[1..]).expect("Error parsing args");
 
     if matches.opt_present("h") {
-        print_usage(&program, opts);
+        print_usage(&args[0], opts); // Like in C, args[0] is the program name
         return;
     }
 
-    if matches.opt_present("v") {
-        return;
+    // If we have no args, read from stdin.
+    if matches.free.is_empty() {
+        let counts = do_count(BufReader::new(stdin()));
+        print_results(&counts, &matches, "<stdin>");
     }
 
-    let (counts, filename) = match matches.free.len() {
-        0 => (do_count(BufReader::new(stdin())), "<stdin>".to_string()),
-        1 => {
-            // just for now.
-            let filename = matches.free[0].clone();
-            let file = File::open(&filename).ok().expect("I couldn't open that file, sorry :(");
-            (do_count(BufReader::new(file)), filename)
-        },
-        _ => panic!("A single filename was expected"),
-    };
-
-    if matches.opt_present("lines") {
-        print!("{} ", counts.lines);
+    // Otherwise...
+    for filename in &matches.free {
+        let file = match File::open(&filename) {
+            Ok(f) => f,
+            Err(e) => {
+                writeln!(&mut stderr(), "{}: {}", filename, e).unwrap();
+                continue;
+            }
+        };
+        let counts = do_count(BufReader::new(file));
+        print_results(&counts, &matches, filename);
     }
+}
 
-    if matches.opt_present("words") {
-        print!("{} ", counts.words)
-    }
+/// Given some counts, the parsed command-line args, and the filename,
+/// print a line with the desired information.
+fn print_results(counts: &CountResults, matches: &Matches, filename: &str) {
+    if matches.opt_present("lines") { print!("{} ", counts.lines); }
 
-    if matches.opt_present("bytes") {
-        print!("{} ", counts.bytes)
-    }
+    if matches.opt_present("words") { print!("{} ", counts.words) }
 
-    if matches.opt_present("chars") {
-        print!("{} ", counts.chars)
-    }
+    if matches.opt_present("bytes") { print!("{} ", counts.bytes) }
+
+    if matches.opt_present("chars") { print!("{} ", counts.chars) }
 
     if matches.opt_present("max-line-length") {
         print!("{} ", counts.max_line_length)
     }
 
-    println!(" {}", filename);
+    println!("{}", filename);
 }
 
 fn print_usage(program: &str, opts: Options) {
